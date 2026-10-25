@@ -1,0 +1,86 @@
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const money=n=>'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const categories=['Leather Jackets','Leather Bags','Wallets','Footwear','Accessories'];
+const designs=[
+ ['Leather Jackets','Premium Cowhide Leather Biker Jacket','🧥',349,'jacket'],
+ ['Leather Jackets','Vintage Distressed Leather Jacket','🧥',429,'jacket'],
+ ['Leather Jackets','Classic Black Lambskin Jacket','🧥',589,'jacket'],
+ ['Leather Jackets','Heritage Brown Flight Jacket','🧥',375,'jacket'],
+ ['Leather Bags','Full-Grain Cowhide Leather Weekender Bag','👜',289,'bag'],
+ ['Leather Bags','Handcrafted Leather Messenger Bag','👜',249,'bag'],
+ ['Leather Bags','Premium Cowhide Travel Duffel','👜',419,'bag'],
+ ['Leather Bags','Minimalist Leather Laptop Briefcase','💼',319,'bag'],
+ ['Wallets','Hand-Stitched Full-Grain Leather Wallet','👛',119,'wallet'],
+ ['Wallets','Luxury Bifold Leather Wallet','👛',135,'wallet'],
+ ['Footwear','Italian Leather Chelsea Boots','🥾',279,'shoes'],
+ ['Footwear','Handcrafted Leather Oxford Shoes','👞',239,'shoes'],
+ ['Accessories','Premium Leather Belt & Buckle','🪢',109,'accessory'],
+ ['Accessories','Leather Travel Organizer Set','🎒',159,'accessory'],
+ ['Accessories','Artisan Leather Camera Strap','📷',125,'accessory'],
+ ['Accessories','Luxury Leather Watch Roll','⌚',145,'accessory']
+];
+const tones=['','tan','blue','red','white','gold'];
+const productData=Array.from({length:1000},(_,i)=>{
+ const d=designs[i%designs.length], batch=Math.floor(i/designs.length);
+ const variant=['Classic','Signature','Heritage','Artisan','Executive','Limited','Urban','Timeless'][batch%8];
+ const extra=['Edition','Collection','Series','Craft','Selection'][Math.floor(batch/8)%5];
+ return {id:i+1,category:d[0],name:batch===0?d[1]:`${variant} ${d[1].replace('Premium ','').replace('Handcrafted ','')} ${extra}`,emoji:d[2],price:Math.round((d[3]+batch*11+(i%7)*17)*100)/100,kind:d[4],tone:tones[(batch+i)%tones.length],seller:['AZHARIX Select','Northline Atelier','Heritage Goods Co.','Urban Hide Studio','Crafted & Co.'][i%5],rating:(4.4+((i*7)%6)/10).toFixed(1),reviews:27+(i*37)%860,tag:i%11===0?'BESTSELLER':i%7===0?'NEW ARRIVAL':''};
+});
+let state={category:'all',query:'',min:100,max:1500,sort:'featured',page:1,pageSize:24,cart:[],liked:new Set(),user:null,role:null,sellerApproved:false};
+const saved=()=>{try{const x=JSON.parse(localStorage.getItem('azharix_demo')||'{}');if(x.cart)state.cart=x.cart;if(x.user)state.user=x.user;if(x.role)state.role=x.role;if(x.sellerApproved)state.sellerApproved=x.sellerApproved;}catch(e){}};
+function persist(){try{localStorage.setItem('azharix_demo',JSON.stringify({cart:state.cart,user:state.user,role:state.role,sellerApproved:state.sellerApproved}));}catch(e){}}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove('show'),2600)}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function renderProducts(){
+ let list=productData.filter(p=>(state.category==='all'||p.category===state.category)&&p.name.toLowerCase().includes(state.query.toLowerCase())&&p.price>=state.min&&p.price<=state.max);
+ if(state.sort==='price-low')list.sort((a,b)=>a.price-b.price);if(state.sort==='price-high')list.sort((a,b)=>b.price-a.price);
+ const pages=Math.max(1,Math.ceil(list.length/state.pageSize));state.page=Math.min(state.page,pages);const start=(state.page-1)*state.pageSize, visible=list.slice(start,start+state.pageSize);
+ $('#resultsCount').textContent=list.length?`Showing ${start+1}–${Math.min(start+state.pageSize,list.length)} of ${list.length.toLocaleString()} products`:'No products found';
+ $('#productGrid').innerHTML=visible.length?visible.map(p=>`<article class="product-card"><div class="product-image" style="background:linear-gradient(145deg,${['#ece8df,#d3d2cc','#e5e7ec,#cdd2dc','#eee5dc,#d6c4b0','#e5e8e7,#c9d0ce','#e7e3ed,#d1cbdc'][p.id%5]})"><span class="product-tag">${p.tag||'PREMIUM'}</span><button class="heart ${state.liked.has(p.id)?'liked':''}" data-like="${p.id}" aria-label="Save product">${state.liked.has(p.id)?'♥':'♡'}</button><span class="visual ${p.kind} ${p.tone}">${p.emoji}</span></div><div class="product-info"><div class="product-category">${escapeHtml(p.category)}</div><h3>${escapeHtml(p.name)}</h3><div class="rating">★★★★★ <span>${p.rating} (${p.reviews})</span></div><div class="price-row"><div class="price">${money(p.price)}</div><button class="add-cart" data-add="${p.id}" aria-label="Add ${escapeHtml(p.name)} to cart">+</button></div><div class="seller-line">Sold by ${escapeHtml(p.seller)}</div></div></article>`).join(''):'<div class="empty-state"><h3>No matching products</h3><p>Try a different search or adjust your filters.</p><button class="secondary-btn" id="emptyClear">Clear filters</button></div>';
+ if(!visible.length)$('#emptyClear').onclick=clearFilters;
+ let nums=[];let from=Math.max(1,state.page-2),to=Math.min(pages,from+4);from=Math.max(1,to-4);for(let i=from;i<=to;i++)nums.push(i);
+ $('#pagination').innerHTML=`<button class="page-btn" data-page="${state.page-1}" ${state.page===1?'disabled':''}>←</button>${nums.map(n=>`<button class="page-btn ${n===state.page?'active':''}" data-page="${n}">${n}</button>`).join('')}<button class="page-btn" data-page="${state.page+1}" ${state.page===pages?'disabled':''}>→</button>`;
+}
+function updateCartCount(){$('#cartCount').textContent=state.cart.reduce((s,x)=>s+x.qty,0)}
+function addCart(id){const p=productData.find(x=>x.id===id);if(!p)return;const found=state.cart.find(x=>x.id===id);found?found.qty++:state.cart.push({id,qty:1});persist();updateCartCount();toast('Added to your cart');}
+function clearFilters(){state.category='all';state.query='';state.min=100;state.max=1500;state.sort='featured';state.page=1;$('#searchInput').value='';$('#categorySelect').value='all';$('#minPrice').value=100;$('#maxPrice').value=1500;$$('.category-filter').forEach(b=>b.classList.toggle('selected',b.dataset.category==='all'));$$('.filter-chip').forEach(b=>b.classList.toggle('selected',b.dataset.sort==='featured'));renderProducts()}
+function openModal(content){$('#modalContent').innerHTML=content;$('#modalBackdrop').classList.add('open')}
+function closeModal(){$('#modalBackdrop').classList.remove('open')}
+function authModal(mode='signin'){
+ const signup=mode==='signup';
+ openModal(`<div class="eyebrow">WELCOME TO AZHARIX</div><h2 id="modalTitle">${signup?'Create your account':'Welcome back.'}</h2><p>${signup?'Join the marketplace as a buyer and discover premium finds.':'Sign in to manage your shopping and seller activity.'}</p><form class="modal-form" id="authForm">${signup?'<label>Full name<input name="name" required minlength="2" placeholder="Your full name"></label>':''}<label>Email address<input name="email" type="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" required minlength="6" placeholder="At least 6 characters"></label><button class="btn btn-gold" type="submit">${signup?'Create account':'Sign in'} ↗</button></form><div class="modal-switch">${signup?'Already have an account?':'New to AZHARIX?'} <button id="authSwitch">${signup?'Sign in':'Create an account'}</button></div><div class="demo-note">Prototype notice: accounts are stored only in this browser for demo purposes. No real authentication or payment processing is connected.</div>`);
+ $('#authSwitch').onclick=()=>authModal(signup?'signin':'signup');
+ $('#authForm').onsubmit=e=>{e.preventDefault();const fd=new FormData(e.currentTarget);state.user={name:fd.get('name')||String(fd.get('email')).split('@')[0],email:fd.get('email')};state.role='buyer';persist();updateAccount();closeModal();toast(signup?'Demo account created':'Signed in (demo)');};
+}
+function updateAccount(){$('#accountLabel').textContent=state.user?state.user.name.split(' ')[0]:'Sign in'}
+function cartModal(){
+ const items=state.cart.map(c=>({...c,p:productData.find(p=>p.id===c.id)})).filter(x=>x.p);
+ const total=items.reduce((s,x)=>s+x.p.price*x.qty,0);
+ openModal(`<div class="eyebrow">YOUR BAG</div><h2 id="modalTitle">Shopping cart (${items.reduce((s,x)=>s+x.qty,0)})</h2>${items.length?`<div class="cart-items">${items.map(x=>`<div class="cart-item"><div class="cart-thumb">${x.p.emoji}</div><div><strong>${escapeHtml(x.p.name)}</strong><small>${money(x.p.price)} · Qty ${x.qty}</small><button class="cart-remove" data-remove="${x.id}">Remove</button></div><b>${money(x.p.price*x.qty)}</b></div>`).join('')}</div><div class="cart-total"><span>Subtotal</span><span>${money(total)}</span></div><p>Shipping, tax and final totals are calculated at checkout in a production store.</p><button class="btn btn-gold" id="checkoutBtn" style="width:100%">Continue to demo checkout ↗</button><div class="demo-note">Demo only: no payment will be collected. Connect a secure backend and payment provider before accepting orders.</div>`:'<div class="empty-state"><h3>Your cart is waiting</h3><p>Add a premium find to get started.</p></div>'}`);
+ $$('[data-remove]').forEach(b=>b.onclick=()=>{state.cart=state.cart.filter(x=>x.id!==Number(b.dataset.remove));persist();updateCartCount();cartModal()});
+ const checkout=$('#checkoutBtn');if(checkout)checkout.onclick=()=>{if(!state.user){closeModal();authModal();return}openModal(`<div class="eyebrow">DEMO CHECKOUT</div><h2>You're almost there.</h2><p>This website is a front-end prototype. Real checkout is not enabled, and no payment has been taken.</p><div class="dash-card"><strong>Order subtotal</strong><p>${money(total)}</p></div><button class="btn btn-gold" id="finishDemo" style="width:100%">Place demo order</button>`);$('#finishDemo').onclick=()=>{state.cart=[];persist();updateCartCount();closeModal();toast('Demo order complete — no payment charged')}}
+}
+function sellerModal(){
+ if(!state.user){closeModal();authModal('signup');toast('Create a buyer account first, then apply to sell');return}
+ openModal(`<div class="eyebrow">SELL ON AZHARIX</div><h2 id="modalTitle">${state.sellerApproved?'Seller dashboard':'Open your storefront.'}</h2><p>${state.sellerApproved?'Your demo seller workspace is ready.':'Create a seller profile and pay a one-time registration fee of $43 USD in the live product concept.'}</p>${state.sellerApproved?`<div class="seller-dashboard"><div class="dash-card"><strong>Store status</strong><p>Demo seller account active · No real orders yet</p></div><div class="dash-card"><strong>Store name</strong><p>${escapeHtml(state.storeName||state.user.name+"'s Store")}</p></div><div class="dash-actions"><button class="btn btn-gold" id="listProductBtn">＋ Add product</button><button class="secondary-btn" id="sellerOrdersBtn">View orders</button></div><div id="sellerExtra"></div></div>`:`<form class="modal-form" id="sellerForm"><label>Store name<input name="store" required placeholder="e.g. Heritage Leather Co."></label><label>What will you sell?<select name="category"><option>Leather goods</option><option>Fashion & accessories</option><option>Footwear</option><option>Other premium products</option></select></label><label>Short store description<textarea name="description" rows="3" required placeholder="Tell buyers about your products and craft"></textarea></label><div class="dash-card"><strong>Seller registration · ${money(43)}</strong><p>One-time fee shown for this demo. Payment is simulated; no charge will be made.</p></div><button class="btn btn-gold" type="submit">Create seller account · $43 ↗</button></form>`}<div class="demo-note">Important: this demo does not verify identities, process the $43 fee, publish listings to a server, or support real buyer-seller transactions.</div>`);
+ const form=$('#sellerForm');if(form)form.onsubmit=e=>{e.preventDefault();const fd=new FormData(form);state.storeName=fd.get('store');state.sellerApproved=true;persist();closeModal();sellerModal();toast('Demo seller account created — no fee charged')};
+ const add=$('#listProductBtn');if(add)add.onclick=()=>{$('#sellerExtra').innerHTML=`<form class="modal-form" id="newListing"><label>Product title<input name="title" required placeholder="Premium cowhide leather bag"></label><label>Price (USD)<input name="price" type="number" min="100" step=".01" required placeholder="249.00"></label><label>Category<select name="category">${categories.map(c=>`<option>${c}</option>`).join('')}</select></label><button class="btn btn-gold">Save demo listing</button></form>`;$('#newListing').onsubmit=e=>{e.preventDefault();const f=new FormData(e.currentTarget);const p={id:productData.length+1,category:f.get('category'),name:f.get('title'),emoji:'👜',price:Number(f.get('price')),kind:'bag',tone:'tan',seller:state.storeName||state.user.name,rating:'5.0',reviews:0,tag:'YOUR LISTING'};productData.unshift(p);closeModal();state.category='all';state.query='';state.page=1;renderProducts();toast('Listing added to this demo session')}}
+ const orders=$('#sellerOrdersBtn');if(orders)orders.onclick=()=>$('#sellerExtra').innerHTML='<div class="dash-card"><strong>Orders</strong><p>No real orders yet. Buyer orders are not stored on a server in this prototype.</p></div>';
+}
+$('#searchForm').addEventListener('submit',e=>{e.preventDefault();state.query=$('#searchInput').value.trim();state.category=$('#categorySelect').value;state.page=1;$$('.category-filter').forEach(b=>b.classList.toggle('selected',b.dataset.category===state.category));renderProducts();$('#products').scrollIntoView({behavior:'smooth'})});
+$('#searchInput').addEventListener('input',()=>{state.query=$('#searchInput').value.trim();state.page=1;renderProducts()});
+$('#categorySelect').addEventListener('change',()=>{state.category=$('#categorySelect').value;state.page=1;$$('.category-filter').forEach(b=>b.classList.toggle('selected',b.dataset.category===state.category));renderProducts()});
+$('#categoryFilters').addEventListener('click',e=>{const b=e.target.closest('[data-category]');if(!b)return;state.category=b.dataset.category;state.page=1;$$('.category-filter').forEach(x=>x.classList.toggle('selected',x===b));$('#categorySelect').value=state.category==='all'?'all':state.category;renderProducts()});
+$('#productGrid').addEventListener('click',e=>{const add=e.target.closest('[data-add]'),like=e.target.closest('[data-like]');if(add)addCart(Number(add.dataset.add));if(like){const id=Number(like.dataset.like);state.liked.has(id)?state.liked.delete(id):state.liked.add(id);renderProducts()}});
+$('#pagination').addEventListener('click',e=>{const b=e.target.closest('[data-page]');if(!b||b.disabled)return;state.page=Number(b.dataset.page);renderProducts();$('#products').scrollIntoView({behavior:'smooth',block:'start'})});
+$$('.filter-chip').forEach(b=>b.onclick=()=>{state.sort=b.dataset.sort;state.page=1;$$('.filter-chip').forEach(x=>x.classList.toggle('selected',x===b));renderProducts()});
+$('#applyPrice').onclick=()=>{state.min=Math.max(100,Number($('#minPrice').value)||100);state.max=Math.max(state.min,Number($('#maxPrice').value)||1500);state.page=1;renderProducts()};
+$('#clearFilters').onclick=clearFilters;$('#pageSize').onchange=()=>{state.pageSize=Number($('#pageSize').value);state.page=1;renderProducts()};
+$('#accountBtn').onclick=()=>state.user?openModal(`<div class="eyebrow">YOUR ACCOUNT</div><h2 id="modalTitle">Hello, ${escapeHtml(state.user.name)}.</h2><p>${escapeHtml(state.user.email)}</p><div class="dash-actions"><button class="btn btn-gold" id="mySeller">Seller account</button><button class="secondary-btn" id="signOut">Sign out</button></div><div class="demo-note">Your demo profile is stored locally in this browser only.</div>`):authModal();
+$('#accountBtn').addEventListener('click',()=>{const s=$('#signOut');if(s)s.onclick=()=>{state.user=null;state.role=null;state.sellerApproved=false;persist();updateAccount();closeModal();toast('Signed out')};const ms=$('#mySeller');if(ms)ms.onclick=sellerModal});
+$('#cartBtn').onclick=cartModal;$('#sellerJoinBtn').onclick=sellerModal;$('#modalClose').onclick=closeModal;$('#modalBackdrop').addEventListener('click',e=>{if(e.target===$('#modalBackdrop'))closeModal()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+$('#mainNav').addEventListener('click',e=>{const a=e.target.closest('[data-filter]');if(a){state.category=a.dataset.filter;state.page=1;$$('.category-filter').forEach(b=>b.classList.toggle('selected',b.dataset.category===state.category));renderProducts()}});
+$('#mobileMenu').onclick=()=>$('#mainNav').classList.toggle('open');
+$('#newsletterForm').onsubmit=e=>{e.preventDefault();toast('Thanks for joining the AZHARIX demo list!');e.currentTarget.reset()};
+$('#footerHelp').onclick=()=>openModal(`<div class="eyebrow">AZHARIX SUPPORT</div><h2 id="modalTitle">How can we help?</h2><p>This is a demo storefront. For a production launch, add support email, order tracking, returns policy, seller verification, and dispute resolution.</p><button class="btn btn-gold" onclick="document.querySelector('#modalBackdrop').classList.remove('open')">Got it</button>`);
+saved();updateAccount();updateCartCount();renderProducts();
